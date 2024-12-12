@@ -51,13 +51,15 @@ Benchmark, test and example program (Windows only).
 - test.h
 
 ## Compiler invocations
-`gcc -o test.exe test.c tjald_impl.c tjald_assembly.obj -O3`
-`clang -o test.exe test.c tjald_impl.c tjald_assembly.obj -O3`
-`if not defined DevEnvDir (call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat")`
-`"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.40.33807\bin\Hostx64\x64\cl" test.c tjald_impl.c /O2 /link /out:test.exe tjald_assembly.obj`
+- `gcc -o test.exe test.c tjald_impl.c tjald_assembly.obj -O3`
 
-`node generate.js l`
-`nasm -o tjald_assembly_linux.o tjald_assembly.s -f elf64`
+- `clang -o test.exe test.c tjald_impl.c tjald_assembly.obj -O3`
 
-`node generate.js w`
-`nasm -o tjald_assembly.obj tjald_assembly.s -f win64`
+- `if not defined DevEnvDir (call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat")`
+- `"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.40.33807\bin\Hostx64\x64\cl" test.c tjald_impl.c /O2 /link /out:test.exe tjald_assembly.obj`
+
+- `node generate.js l`
+- `nasm -o tjald_assembly_linux.o tjald_assembly.s -f elf64`
+
+- `node generate.js w`
+- `nasm -o tjald_assembly.obj tjald_assembly.s -f win64`

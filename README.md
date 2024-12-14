@@ -63,3 +63,17 @@ Benchmark, test and example program (Windows only).
 
 - `node generate.js w`
 - `nasm -o tjald_assembly.obj tjald_assembly.s -f win64`
+
+## Function list
+- tjald_once - Must be run before any other function, this sets the function pointers to appropriate implementations for the local machine. Return an integer indicating what implementation was selected. 6: AVX512+VAES. 4: AVX2+VAES. 3: AVX+AESNI. 2: SSE2+AESNI/Arm AES. 0: Portable C. -1: No suitable implementation present.
+- tjald_once_limit - Can be used in place of `tjald_once` to force selecting a lower implementation level.
+- tjald_self_test - A small test function to verify that the build is working. Returns 69 on success.
+- tjald_expand_seed - Expands an arbitrary length seed into a 704 byte key for Tjald2 and Tjald3.
+
+- tjald_2_begin/tjald_3_begin/tjald_4_begin - Initialize a Tjald state struct in preparation for computing a hash value. Tjald2 and Tjald3 take an optional key, pass a null pointer instead of the key to use the default seed.
+- tjald_2_absorb/tjald_3_absorb/tjald_4_absorb - Absorb an arbitrary amount of data. Can be called many times. Must only be called after the struct has been initialized.
+- tjald_2_end/tjald_3_end/tjald_4_end - Finalises the hashing process and writes the result to the given buffer. No further calls may be made before the struct has been initialized again.
+- tjald_2/tjald_3/tjald_4 - One shot functions that allocate a struct on the stack and call each of the three functions above once each.
+
+- gesus_128_seed/gesus_512_seed - Initializes a Gesus state struct using an arbitrary length seed.
+- gesus_128_rand/gesus_512_rand - Writes an arbitrary amount of output to a given output buffer. The state struct must be initialized before this function is called.

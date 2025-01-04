@@ -1,5 +1,7 @@
+//Reference code, very slow, and really only for reference.
 #include <stdint.h>
 
+//The default seed, pi in base 16.
 uint8_t tjaldr_seed[704]={
 	0x32,0x43,0xF6,0xA8,0x88,0x5A,0x30,0x8D,0x31,0x31,0x98,0xA2,0xE0,0x37,0x07,0x34,
 	0x4A,0x40,0x93,0x82,0x22,0x99,0xF3,0x1D,0x00,0x82,0xEF,0xA9,0x8E,0xC4,0xE6,0xC8,
@@ -47,6 +49,7 @@ uint8_t tjaldr_seed[704]={
 	0x01,0xA8,0x75,0x62,0xED,0xF1,0x76,0x9D,0xBD,0x54,0x2A,0x8F,0x62,0x87,0xEF,0xFC
 };
 
+//The AES sbox.
 uint8_t tjaldr_sbox[256]={
 	0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
 	0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
@@ -66,6 +69,7 @@ uint8_t tjaldr_sbox[256]={
 	0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
 
+//Various functions imitating 128 bit vector functions.
 void tjaldr_xor(uint8_t* dst,const uint8_t* op0,const uint8_t* op1){
 	uint32_t a;
 	for(a=0;a<16;a++){
@@ -101,6 +105,7 @@ void tjaldr_set(uint8_t* dst,const uint8_t* op0){
 	}
 }
 
+//An AES round without the AddRoundKey step.
 void tjaldr_aes(uint8_t* dst,const uint8_t* op0){
 	uint32_t a;
 	uint8_t result[16];
@@ -124,11 +129,15 @@ void tjaldr_aes(uint8_t* dst,const uint8_t* op0){
 	}
 }
 
+//The main workhorse of the Tjald functions. The input parameters allows it to read data in different patterns and work in both the main 512 bit path and the short/final 128 bit path.
 void tjaldr_kernel(uint8_t* state,const uint8_t* input0,const uint8_t* input1,uint32_t jumplength,uint32_t width){
 	uint32_t a,b,c;
 	uint8_t storage[16];
+	//Optionally loop to imitate 512 bit registers instead of 128 bit.
 	for(a=0;a<width;a++){
+		//Four Tjald rounds combined, they always go in bunches of 4 as that let the vector code skip a lot of move commands.
 		for(b=0;b<4;b++){
+			//A single round of Tjald, equivalent to the tjald_round.png diagram.
 			uint8_t* v0=state+a*16+width*16*0;
 			uint8_t* v1=state+a*16+width*16*1;
 			uint8_t* v4=state+a*16+width*16*4;
@@ -157,10 +166,12 @@ void tjaldr_kernel(uint8_t* state,const uint8_t* input0,const uint8_t* input1,ui
 	}
 }
 
+//Similar to tjaldr_kernel, but ingests no input, used for shuffling the state after all input has been digested.
 void tjaldr_mix(uint8_t* state){
 	uint32_t b,c;
 	uint8_t storage[16];
 	for(b=0;b<4;b++){
+		//A single mix round, equivalent to the tjald_mix.png diagram.
 		uint8_t* v0=state+16*0;
 		uint8_t* v1=state+16*1;
 		uint8_t* v2=state+16*2;
@@ -188,6 +199,7 @@ void tjaldr_mix(uint8_t* state){
 	}
 }
 
+//Tjald2 all-in-one function.
 void tjaldr_2(const uint8_t key[704],const void* input,size_t input_length,uint8_t out[64]){
 	const uint8_t* input8=(uint8_t*)input;
 	const uint8_t* inner_key=tjaldr_seed;
@@ -200,11 +212,14 @@ void tjaldr_2(const uint8_t key[704],const void* input,size_t input_length,uint8
 	uint8_t buffer[768];
 	uint32_t a;
 	uint64_t b;
+	//Select the long path if the input is long.
 	if(input_length>508){
 		uint64_t input_length_counter=input_length;
+		//Load the key as the initial state.
 		for(a=0;a<704;a++){
 			state[a]=inner_key[a];
 		}
+		//Digest all full blocks.
 		while(input_length_counter>512){
 			tjaldr_kernel(state,input8,input8+64,128,4);
 			input8+=512;
@@ -216,7 +231,9 @@ void tjaldr_2(const uint8_t key[704],const void* input,size_t input_length,uint8
 		for(a=input_length_counter;a<512;a++){
 			buffer[a]=0;
 		}
+		//Digest the final block padded with zeroes.
 		tjaldr_kernel(state,buffer,buffer+64,128,4);
+		//Set up data so that the long path state will be processed by the short path code.
 		for(a=0;a<704;a++){
 			buffer[a]=state[a];
 		}
@@ -231,6 +248,7 @@ void tjaldr_2(const uint8_t key[704],const void* input,size_t input_length,uint8
 		final_key=tjaldr_seed;
 	}
 	else{
+		//Set up data so that the entire input will be processed by the short path code.
 		final_length=((uint32_t)input_length+127+4)&0xffffff80U;
 		final_key=inner_key;
 		for(a=0;a<input_length;a++){
@@ -243,18 +261,22 @@ void tjaldr_2(const uint8_t key[704],const void* input,size_t input_length,uint8
 			buffer[final_length-4+a]=(input_length>>(a*8))&255;
 		}
 	}
+	//Short/final path.
 	for(a=0;a<176;a++){
 		state[a]=final_key[a];
 	}
 	uint8_t* final_input=buffer;
+	//Digest all data on the short path, including 0 padding and input length.
 	while(final_length>0){
 		tjaldr_kernel(state,final_input,final_input+16,32,1);
 		final_length-=128;
 		final_input+=128;
 	}
+	//Do final state mixing.
 	for(a=0;a<4;a++){
 		tjaldr_mix(state);
 	}
+	//Combine the state into 512 bits and output it, equivalent to the tjald_final.png diagram.
 	tjaldr_add(state+16*0,state+16*0,state+16*1);
 	tjaldr_add(state+16*2,state+16*2,state+16*3);
 	tjaldr_add(state+16*4,state+16*4,state+16*5);
@@ -268,28 +290,36 @@ void tjaldr_2(const uint8_t key[704],const void* input,size_t input_length,uint8
 	tjaldr_set(out+16*3,state+16*7);
 }
 
+//A super round that calls tjaldr_kernel 8 times with token differences.
 void tjaldr_3_round(uint8_t* state,const uint8_t* input8,uint32_t width){
 	uint32_t a;
+	//Iterate over the input once, just like Tjald2.
 	for(a=0;a<4;a++){
 		tjaldr_kernel(state,input8+a*width*128,input8+width*16+a*width*128,width*32,width);
 	}
+	//Introduce a token difference.
 	for(a=0;a<width;a++){
 		tjaldr_add(state+width*96+a*16,state+width*96+a*16,tjaldr_seed);
 	}
+	//Iterate over half the input, with the two input pointers swapped.
 	for(a=0;a<2;a++){
 		tjaldr_kernel(state,input8+width*16+a*width*128,input8+a*width*128,width*32,width);
 	}
+	//Another token difference.
 	for(a=0;a<width;a++){
 		tjaldr_add(state+width*32+a*16,state+width*32+a*16,tjaldr_seed);
 	}
+	//Iterate over the second half of the input, still with the two input pointers swapped.
 	for(a=2;a<4;a++){
 		tjaldr_kernel(state,input8+width*16+a*width*128,input8+a*width*128,width*32,width);
 	}
+	//The final token difference.
 	for(a=0;a<width;a++){
 		tjaldr_sub(state+width*32+a*16,state+width*32+a*16,tjaldr_seed);
 	}
 }
 
+//Tjald3 all-in-one function, the difference from Tjald2 is mainly using the tjaldr_3_round function that does twice the work per input byte.
 void tjaldr_3(const uint8_t key[704],const void* input,size_t input_length,uint8_t out[64]){
 	const uint8_t* input8=(uint8_t*)input;
 	const uint8_t* inner_key=tjaldr_seed;
@@ -370,40 +400,52 @@ void tjaldr_3(const uint8_t key[704],const void* input,size_t input_length,uint8
 	tjaldr_set(out+16*3,state+16*7);
 }
 
+//Much like the tjaldr_3_round, calls tjaldr_kernel 24 times.
 void tjaldr_4_round(uint8_t* state,const uint8_t* input8,uint32_t width){
 	uint32_t a;
+	//Iterate over the entire input, like Tjald2.
 	for(a=0;a<8;a++){
 		tjaldr_kernel(state,input8+a*width*128,input8+width*16+a*width*128,width*32,width);
 	}
+	//Token difference.
 	for(a=0;a<width;a++){
 		tjaldr_add(state+width*96+a*16,state+width*96+a*16,tjaldr_seed);
 	}
+	//Iterate over the entire input, skipping every second piece of input.
 	for(a=0;a<4;a++){
 		tjaldr_kernel(state,input8+a*width*256,input8+width*32+a*width*256,width*64,width);
 	}
+	//Token difference.
 	for(a=0;a<width;a++){
 		tjaldr_add(state+width*32+a*16,state+width*32+a*16,tjaldr_seed);
 	}
+	//Iterate over the entire input, skipping the other every second piece of input.
 	for(a=0;a<4;a++){
 		tjaldr_kernel(state,input8+width*16+a*width*256,input8+width*48+a*width*256,width*64,width);
 	}
+	//Token difference.
 	for(a=0;a<width;a++){
 		tjaldr_sub(state+width*96+a*16,state+width*96+a*16,tjaldr_seed);
 	}
+	//Iterate over 3/8th the input, with the two input pointers swapped.
 	for(a=0;a<3;a++){
 		tjaldr_kernel(state,input8+width*16+a*width*128,input8+a*width*128,width*32,width);
 	}
+	//Token difference.
 	for(a=0;a<width;a++){
 		tjaldr_sub(state+width*32+a*16,state+width*32+a*16,tjaldr_seed);
 	}
+	//Iterate over the remaining 5/8th the input, with the two input pointers swapped.
 	for(a=3;a<8;a++){
 		tjaldr_kernel(state,input8+width*16+a*width*128,input8+a*width*128,width*32,width);
 	}
+	//Token difference.
 	for(a=0;a<width;a++){
 		tjaldr_sub(state+width*32+a*16,state+width*32+a*16,tjaldr_seed);
 	}
 }
 
+//Much like Tjald3, but doesn't take a key as input. Also XORs the state with the previous state after each block is processed.
 void tjaldr_4(const void* input,size_t input_length,uint8_t out[64]){
 	const uint8_t* input8=(uint8_t*)input;
 	uint32_t final_length;
@@ -499,12 +541,13 @@ void tjaldr_4(const void* input,size_t input_length,uint8_t out[64]){
 #ifndef TJALD_HEADER_INCLUDED
 
 typedef struct gesus_128_state{
-	uint8_t output[1024];
-	uint8_t secret[1024];
-	uint8_t state[176]; 
-	uint64_t spent;
+	uint8_t output[1024]; //Output buffer, output will be taken from here until it is empty, then it will be completely refilled.
+	uint8_t secret[1024]; //Slowly rotating secret state, each value is read and updated once each time the buffer is filled.
+	uint8_t state[176]; //Fast secret state, is loaded into 11 128 bit registers.
+	uint64_t spent; //Counts how much output have been released, may theoretically roll around.
 } gesus_128_state;
 
+//Similar to gesus_128_state, but contains 4 streams that are processed in parallel.
 typedef struct gesus_512_state{
 	uint8_t output[4096];
 	uint8_t secret[4096];
@@ -514,6 +557,7 @@ typedef struct gesus_512_state{
 
 #endif
 
+//Main work loop
 void gesusr_128_advance(gesus_128_state* state){
 	uint32_t a,b;
 	uint8_t secret0[16];
@@ -521,6 +565,7 @@ void gesusr_128_advance(gesus_128_state* state){
 	uint8_t* secret_ptr=state->secret;
 	uint8_t* out_ptr=state->output;
 	for(a=0;a<64;a++){
+		//Equivalent to the diagram gesus_round.png.
 		uint8_t* v0=state->state+16*0;
 		uint8_t* v1=state->state+16*1;
 		uint8_t* v4=state->state+16*4;
@@ -565,10 +610,13 @@ void gesusr_128_seed(gesus_128_state* state,const void* seed,size_t seed_length)
 	for(a=0;a<176;a++){
 		state->state[a]=tjaldr_seed[a];
 	}
+	//The seed length is mixed into the fast state.
 	for(a=0;a<8;a++){
 		state->state[a]^=(((uint64_t)seed_length)>>(a*8))&255;
 	}
 	state->spent=0;
+	//The seed is xored into the slow state in blocks of 256 bytes, the blocks are each placed in 3 different positions.
+	//The state is advanced once for each block.
 	while(seed_length>256){
 		for(a=0;a<256;a++){
 			state->secret[a]^=seed8[a];
@@ -595,6 +643,7 @@ void gesusr_128_rand(gesus_128_state* state,void* output,size_t output_length){
 	if(left==1024){
 		left=0;
 	}
+	//Any remaining previously generated output is served first.
 	if(left>0){
 		uint32_t copylength=left;
 		if(output_length<=left){
@@ -607,7 +656,9 @@ void gesusr_128_rand(gesus_128_state* state,void* output,size_t output_length){
 		state->spent+=copylength;
 		output_length-=copylength;
 	}
+	//Generate and output bytes until the request is fulfilled.
 	while(output_length>0){
+		//The spent counter is ingested into the slow state in order to eliminate an itsy bitsy teeny weeny probability of a short cycle.
 		for(a=0;a<8;a++){
 			state->secret[a]^=((state->spent)>>(a*8))&255;
 		}
@@ -625,6 +676,7 @@ void gesusr_128_rand(gesus_128_state* state,void* output,size_t output_length){
 	}
 }
 
+//Just like gesusr_128_advance, but operates on 4 streams.
 void gesusr_512_advance(gesus_512_state* state){
 	uint32_t a,b,c;
 	uint8_t secret0[16];
@@ -669,6 +721,8 @@ void gesusr_512_advance(gesus_512_state* state){
 	}
 }
 
+//Borrows the seed function from Gesus128 which generates 1616 bytes, that in turn are repeated almost 3 times in order to fill the entire state.
+//The state is then advanced once.
 void gesusr_512_seed(gesus_512_state* state,const void* seed,size_t seed_length){
 	gesus_128_state state128;
 	gesusr_128_seed(&state128,seed,seed_length);
@@ -684,6 +738,7 @@ void gesusr_512_seed(gesus_512_state* state,const void* seed,size_t seed_length)
 	state->spent=0;
 }
 
+//Almost like gesusr_128_rand, but operates on 4 parallel streams.
 void gesusr_512_rand(gesus_512_state* state,void* output,size_t output_length){
 	uint8_t* out8=(uint8_t*)output;
 	uint32_t buffer_offset=state->spent&4095;
@@ -705,6 +760,7 @@ void gesusr_512_rand(gesus_512_state* state,void* output,size_t output_length){
 		output_length-=copylength;
 	}
 	while(output_length>0){
+		//The spent counter is offset a bit for each stream.
 		for(b=0;b<4;b++){
 			for(a=0;a<8;a++){
 				state->secret[a+b*16]^=((state->spent+b)>>(a*8))&255;
@@ -724,6 +780,7 @@ void gesusr_512_rand(gesus_512_state* state,void* output,size_t output_length){
 	}
 }
 
+//The official way of generating a key for the Tjald functions.
 void tjaldr_expand_seed(const void* seed,size_t seed_length,uint8_t expanded_key[704]){
 	gesus_128_state state;
 	gesusr_128_seed(&state,seed,seed_length);

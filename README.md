@@ -1,5 +1,5 @@
 # Tjald Hash and RNG Suite
-A collection of hash and RNG functions that rely on hardware AES.
+A collection of hash and RNG functions that rely on hardware AES instructions.
 
 ## Warning - Incomplete software
 This library is in a pre-release state, while it is technically usable it lacks proper documentation and not all planned code paths have been implemented yet.
@@ -25,6 +25,8 @@ On a Zen4 CPU I have measured Tjald2 to process up to around 30 bytes per clock 
 
 ## Design considerations
 The high performance is achieved by a combination of several advancements relative to most other competing functions. AES acceleration instructions will generally do a lot more useful cryptographic work than any other instructions available on modern CPUs, including all other instructions specifically designed for cryptography, most other functions use instructions that do far less work per invocation. The algorithms are designed to work directly on 512 bit vector registers, most other functions are designed around 32 or 64 bit integers, with vector implementations being an afterthought, this tends to result in a lot of wasted time moving data around, and only moderate gains. The algorithms make use of a large 11-register state, this allows many instructions to be processed in parallel, most other algorithms simply cannot issue enough non-dependent instructions to saturate a core with vector instructions.
+
+The constructions use single round AES instructions rather than the full 10 round AES schedule, this allows for a much faster mixing pattern.
 
 Tjald4 processes data in blocks of 1 KiB, iterating over the block 3 times. While this is similar to the prominent Merkle-Damgård constructions, the block is much larger. This makes the amount of work performed per block similarly larger, which in turn means that an attack on a single block will either have to maintain a state difference for much longer, or resynchronise the state 3 times instead of 1. Tjald3 uses a similar but lighter construction.
 
